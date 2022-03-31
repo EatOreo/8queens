@@ -1,6 +1,3 @@
-import java.util.ArrayList;
-import java.util.HashSet;
-
 import net.sf.javabdd.*;
 
 //javac -cp .:javabdd-1.0b2.jar TheLogic.java 
@@ -14,10 +11,15 @@ public class TheLogic implements IQueensLogic{
     private BDD bdd;
 
     public static void main(String[] args) {
+        
+        var n = 8;
         var logic = new TheLogic();
-        logic.initializeBoard(2);
+        logic.initializeBoard(n);
 
-        logic.insertQueen(0, 0);
+        logic.insertQueen(3, 1);
+        logic.insertQueen(5, 5);
+
+        logic.printBoard();
     }
 
     public void initializeBoard(int size) {
@@ -39,14 +41,47 @@ public class TheLogic implements IQueensLogic{
         return board;
     }
 
-    public void insertQueen(int column, int row) {
-        board[column][row] = 1;
-        int v = varAt(column, row);
-        fact.printTable(bdd.restrict(fact.ithVar(v)));
+    private void updateBoard() {
+        for (int i = 0; i < size; i++) {
+            for (int j = 0; j < size; j++) {
+                if (board[i][j] == 1 || board[i][j] == -1) continue;
+                var k = varAt(i, j);
+                if (k.isZero() || bdd.restrict(k).isZero()) {
+                    board[i][j] = -1;
+                }
+                else if (k.isOne() || bdd.restrict(k.not()).isZero()) {
+                    board[i][j] = 1;
+                } 
+            }
+        }
     }
 
-    private int varAt(int x, int y) {
-        return varMap[x][y];
+    public void insertQueen(int column, int row) {
+        if (board[column][row] != 0) return;
+        var v = varAt(column, row);
+        bdd = bdd.restrict(v);
+        board[column][row] = 1;
+        updateBoard();
+    }
+
+    public void printBoard() {
+        var signs = new String[]{"x", "-", "Q"};
+
+        var b = getBoard();
+        for (int i = 0; i < size; i++) {
+            for (int j = 0; j < size; j++) {
+                System.out.print(signs[b[i][j] + 1] + " ");
+            }
+            System.out.println();
+        }
+    }
+
+    public void printBDD() {
+        fact.printTable(bdd);
+    }
+
+    private BDD varAt(int x, int y) {
+        return fact.ithVar(varMap[x][y]);
     }
 
     private void initBDD(int n) {
@@ -58,14 +93,26 @@ public class TheLogic implements IQueensLogic{
             var xBDD = fact.zero();
             var yBDD = fact.zero();
             for (int j = 0; j < n; j++) {
-                xBDD = xBDD.xor(fact.ithVar(varAt(i, j)));
-                yBDD = yBDD.xor(fact.ithVar(varAt(j, i)));
+                var k = varAt(i, j);
+                var kxBDD = varAt(i, j);
+                var kyBDD = varAt(i, j);
+                for (int l = 0; l < n; l++) {
+                    if (l != j) {
+                        kxBDD = kxBDD.and(k.and(varAt(i, l)).not());
+                    }
+                    if (l != i) {
+                        kyBDD = kyBDD.and(k.and(varAt(l, j)).not());
+                    }
+                }
+                xBDD = xBDD.or(kxBDD);
+                yBDD = yBDD.or(kyBDD);
             }
             bdd = bdd.and(xBDD).and(yBDD);
         }
+        
 
         // //diagonals
-        // var dias = new ArrayList<HashSet<Integer>>();
+        // var dias = new ArrayList<HashSet<BDD>>();
         // for(int k = 0; k < n * 2; k++ ) {
         //     dias.add(new HashSet<>());
         //     for( int j = 0; j <= k; j++ ) {
@@ -85,10 +132,10 @@ public class TheLogic implements IQueensLogic{
         //     }
         // }
 
-        // for (HashSet<Integer> s : dias) {
+        // for (HashSet<BDD> s : dias) {
         //     var kBDD = fact.zero();
         //     for (var d : s) {
-        //         kBDD = kBDD.xor(fact.ithVar(d));
+        //         kBDD = kBDD.xor(d);
         //     }
         //     bdd = bdd.and(kBDD);
         // }
@@ -100,21 +147,9 @@ public class TheLogic implements IQueensLogic{
 //     var xBDD = fact.zero();
 //     var yBDD = fact.zero();
 //     for (int j = 0; j < n; j++) {
-//         int k = varAt(i, j);
-//         var kxBDD = fact.ithVar(k);
-//         var kyBDD = fact.ithVar(k);
-//         for (int l = 0; l < n; l++) {
-//             if (l != j) {
-//                 int x = varAt(i, l);
-//                 kxBDD = kxBDD.and(fact.nithVar(x));
-//             }
-//             if (l != i) {
-//                 int x = varAt(l, j);
-//                 kyBDD = kyBDD.and(fact.nithVar(x));
-//             }
-//         }
-//         xBDD = xBDD.or(kxBDD);
-//         yBDD = yBDD.or(kyBDD);
+//         // (true XOR true) XOR true = true
+//         xBDD = xBDD.xor(varAt(i, j));
+//         yBDD = yBDD.xor(varAt(j, i));
 //     }
 //     bdd = bdd.and(xBDD).and(yBDD);
 // }
