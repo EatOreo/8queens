@@ -1,3 +1,5 @@
+import java.util.ArrayList;
+
 import net.sf.javabdd.*;
 
 //javac -cp .:javabdd-1.0b2.jar TheLogic.java 
@@ -10,18 +12,6 @@ public class TheLogic implements IQueensLogic{
     private int[][] varMap;
     private BDD bdd;
 
-    public static void main(String[] args) {
-        
-        var n = 8;
-        var logic = new TheLogic();
-        logic.initializeBoard(n);
-
-        logic.insertQueen(3, 1);
-        logic.insertQueen(5, 5);
-
-        logic.printBoard();
-    }
-
     public void initializeBoard(int size) {
         this.size = size;
         this.board = new int[size][size];
@@ -29,39 +19,125 @@ public class TheLogic implements IQueensLogic{
         int k = 0;
         for (int i = 0; i < size; i++) {
             for (int j = 0; j < size; j++) {
+                //each square is assigned a variable id
                 varMap[i][j] = k;
                 k++;
             }
         }
         initBDD(size);
-        
+        updateBoard(); //in case there are any restrictions by default (there are not though)
     }
    
     public int[][] getBoard() {
         return board;
     }
 
+    public void insertQueen(int column, int row) {
+        if (board[column][row] != 0) return; //insert is denied if square has been determined
+        var v = varAt(column, row);
+        bdd = bdd.restrict(v); //v (variable representing the square) is restricted to be true
+        board[column][row] = 1; //queen is inserted
+        updateBoard();
+    }
+
     private void updateBoard() {
+        //iterate over each square
         for (int i = 0; i < size; i++) {
             for (int j = 0; j < size; j++) {
                 if (board[i][j] == 1 || board[i][j] == -1) continue;
-                var k = varAt(i, j);
-                if (k.isZero() || bdd.restrict(k).isZero()) {
-                    board[i][j] = -1;
+                var v = varAt(i, j); //variable for the square
+                if (v.isZero() || bdd.restrict(v).isZero()) {
+                    //if when v is set to true, the bdd turns false, the square must be false
+                    board[i][j] = -1; //thus no queen
                 }
-                else if (k.isOne() || bdd.restrict(k.not()).isZero()) {
-                    board[i][j] = 1;
+                else if (v.isOne() || bdd.restrict(v.not()).isZero()) {
+                    //if when v is set to false, the bdd turns false, the square must be true
+                    board[i][j] = 1; //thus queen
                 } 
             }
         }
     }
 
-    public void insertQueen(int column, int row) {
-        if (board[column][row] != 0) return;
-        var v = varAt(column, row);
-        bdd = bdd.restrict(v);
-        board[column][row] = 1;
-        updateBoard();
+    private BDD varAt(int x, int y) {
+        return fact.ithVar(varMap[x][y]);
+    }
+
+    private void initBDD(int n) {
+        fact.setVarNum(n * n);
+        bdd = fact.one();
+
+        //this is the list for all sets of lines that block each other
+        var lines = new ArrayList<ArrayList<BDD>>();
+
+        //column and row lines are added
+        for (int i = 0; i < n; i++) {
+            //vv these are for defining there must be one queen on each column + row
+            var xBDD = fact.zero();
+            var yBDD = fact.zero();
+
+            var xl = new ArrayList<BDD>();
+            var yl = new ArrayList<BDD>();
+            for (int j = 0; j < n; j++) {
+                var x = varAt(i, j);
+                var y = varAt(j, i);
+
+                xl.add(x);
+                yl.add(y);
+
+                //(x, 0) or (x, 1) or (x, 2)...
+                xBDD = xBDD.or(x);
+                yBDD = yBDD.or(y);
+            }
+            lines.add(xl);
+            lines.add(yl);
+
+            bdd = bdd.and(xBDD);
+            bdd = bdd.and(yBDD);
+        }
+
+        //diagonals are added
+        //https://stackoverflow.com/questions/20420065/loop-diagonally-through-two-dimensional-array
+        for(int k = 0; k < n * 2; k++ ) {
+            var xl = new ArrayList<BDD>();
+            var yl = new ArrayList<BDD>();
+            for( int j = 0; j <= k; j++ ) {
+                int i = k - j;
+                if( i < n && j < n ) {
+                    xl.add(varAt(i, j));
+                    yl.add(varAt(n - i - 1, j));
+                }
+                lines.add(xl);
+                lines.add(yl);
+            }
+        }
+
+        //for each line no two variables can be true at the same time
+        for (ArrayList<BDD> line : lines) {
+            for (int i = 0; i < line.size(); i++) {
+                var a = line.get(i);
+                for (int j = i + 1; j < line.size(); j++) {
+                    var b = line.get(j);
+                    // (not ((0, 0) and (0, 1))) and (not ((0, 0) and (0, 2)))...
+                    bdd = bdd.and(a.and(b).not());
+                }
+            }
+        }
+    }
+
+    // vvv For debugging vvv
+
+    public static void main(String[] args) {
+        
+        var n = 8;
+        var logic = new TheLogic();
+        logic.initializeBoard(n);
+
+        //logic.printBDD();
+
+        logic.insertQueen(1, 1);
+        logic.insertQueen(6, 5);
+
+        logic.printBoard();
     }
 
     public void printBoard() {
@@ -79,77 +155,4 @@ public class TheLogic implements IQueensLogic{
     public void printBDD() {
         fact.printTable(bdd);
     }
-
-    private BDD varAt(int x, int y) {
-        return fact.ithVar(varMap[x][y]);
-    }
-
-    private void initBDD(int n) {
-        fact.setVarNum(n * n);
-        bdd = fact.one();
-
-        //vertical and horizontal lines
-        for (int i = 0; i < n; i++) {
-            var xBDD = fact.zero();
-            var yBDD = fact.zero();
-            for (int j = 0; j < n; j++) {
-                var k = varAt(i, j);
-                var kxBDD = varAt(i, j);
-                var kyBDD = varAt(i, j);
-                for (int l = 0; l < n; l++) {
-                    if (l != j) {
-                        kxBDD = kxBDD.and(k.and(varAt(i, l)).not());
-                    }
-                    if (l != i) {
-                        kyBDD = kyBDD.and(k.and(varAt(l, j)).not());
-                    }
-                }
-                xBDD = xBDD.or(kxBDD);
-                yBDD = yBDD.or(kyBDD);
-            }
-            bdd = bdd.and(xBDD).and(yBDD);
-        }
-        
-
-        // //diagonals
-        // var dias = new ArrayList<HashSet<BDD>>();
-        // for(int k = 0; k < n * 2; k++ ) {
-        //     dias.add(new HashSet<>());
-        //     for( int j = 0; j <= k; j++ ) {
-        //         int i = k - j;
-        //         if( i < n && j < n ) {
-        //             dias.get(k).add(varAt(i, j));
-        //         }
-        //     }
-        // }
-        // for(int k = 0; k < n * 2; k++ ) {
-        //     dias.add(new HashSet<>());
-        //     for( int j = 0; j <= k; j++ ) {
-        //         int i = k - j;
-        //         if( i < n && j < n ) {
-        //             dias.get(k + (n * 2)).add(varAt(n - i - 1, n - j - 1));
-        //         }
-        //     }
-        // }
-
-        // for (HashSet<BDD> s : dias) {
-        //     var kBDD = fact.zero();
-        //     for (var d : s) {
-        //         kBDD = kBDD.xor(d);
-        //     }
-        //     bdd = bdd.and(kBDD);
-        // }
-    }
 }
-
-// old vertical and horizontal lines
-// for (int i = 0; i < n; i++) {
-//     var xBDD = fact.zero();
-//     var yBDD = fact.zero();
-//     for (int j = 0; j < n; j++) {
-//         // (true XOR true) XOR true = true
-//         xBDD = xBDD.xor(varAt(i, j));
-//         yBDD = yBDD.xor(varAt(j, i));
-//     }
-//     bdd = bdd.and(xBDD).and(yBDD);
-// }
