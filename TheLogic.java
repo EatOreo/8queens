@@ -25,7 +25,7 @@ public class TheLogic implements IQueensLogic{
             }
         }
         initBDD(size);
-        updateBoard(); //in case there are any restrictions by default (there are not though)
+        updateBoard(); //in case there are any restrictions by default, ex. board size 6
     }
    
     public int[][] getBoard() {
